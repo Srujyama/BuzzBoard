@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-buzz-primary: #f59e0b;
+  --color-buzz-dark: #1e1b4b;
+  --color-buzz-danger: #ef4444;
+  --color-buzz-safe: #22c55e;
+  --color-buzz-warning: #f97316;
+  --color-buzz-surface: #1e293b;
+  --color-buzz-muted: #94a3b8;
+}
