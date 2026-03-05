@@ -1,11 +1,19 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="BuzzBoard API", version="0.1.0")
 
+_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or [
+    "http://localhost:5173",
+    "http://localhost:4173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.(fly\.dev|vercel\.app|netlify\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
