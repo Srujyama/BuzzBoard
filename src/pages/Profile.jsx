@@ -187,17 +187,52 @@ export default function Profile() {
           </SectionCard>
 
           {/* Personal goal */}
-          <SectionCard icon={Target} iconColor="#10b981" iconBg="rgba(16,185,129,0.15)" title="Personal Drink Goal">
-            <input
-              type="number" value={personalLimit}
-              onChange={(e) => setPersonalLimit(e.target.value)}
-              min="1" max="20"
-              placeholder="Max drinks per night"
-              style={inputStyle}
-              onFocus={handleFocus} onBlur={handleBlur}
-            />
+          <SectionCard icon={Target} iconColor="#10b981" iconBg="rgba(16,185,129,0.15)" title="Personal Drink Limit">
+            {/* Quick-pick buttons */}
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {[3, 4, 5, 6, 8, 10].map((n) => {
+                const active = parseInt(personalLimit) === n
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPersonalLimit(String(n))}
+                    className="px-3 py-1.5 rounded-xl text-sm font-bold border transition-all"
+                    style={
+                      active
+                        ? { background: 'rgba(16,185,129,0.15)', borderColor: '#10b981', color: '#10b981' }
+                        : { backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-muted)' }
+                    }
+                  >
+                    {n}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" value={personalLimit}
+                onChange={(e) => setPersonalLimit(e.target.value)}
+                min="1" max="30"
+                placeholder="Custom…"
+                style={{ ...inputStyle, flex: 1 }}
+                onFocus={handleFocus} onBlur={handleBlur}
+              />
+              {personalLimit && (
+                <button
+                  type="button"
+                  onClick={() => setPersonalLimit('')}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold border"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', backgroundColor: 'var(--bg-input)' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-              Optional — overrides calculated limits in the tracker
+              {personalLimit
+                ? `Your tracker will use ${personalLimit} drinks as your limit tonight.`
+                : 'Leave blank to use your calculated BAC-based limits.'}
             </p>
           </SectionCard>
 

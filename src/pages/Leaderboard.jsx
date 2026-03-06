@@ -1,11 +1,26 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { Trophy } from 'lucide-react'
+import { Trophy, Wine } from 'lucide-react'
 
 const podiumColors = ['#f5c842', '#94a3b8', '#cd7c3b']
-const podiumLabels = ['1st', '2nd', '3rd']
 const podiumEmoji = ['🥇', '🥈', '🥉']
+
+// A "night session" counts if it started between 8 PM (20:00) and 6 AM next day.
+// We pick the best single-night drink total per person.
+function isNightSession(startedAt) {
+  if (!startedAt) return false
+  const d = new Date(startedAt)
+  const hour = d.getHours()
+  return hour >= 20 || hour < 6
+}
+
+// From an array of sessions for one user, find the best night's drink total
+function bestNightDrinks(sessions) {
+  const nightSessions = sessions.filter((s) => isNightSession(s.started_at))
+  if (nightSessions.length === 0) return 0
+  return Math.max(...nightSessions.map((s) => s.total_standard_drinks || 0))
+}
 
 function PodiumCard({ rank, entry, isYou }) {
   const color = podiumColors[rank - 1]
@@ -25,14 +40,14 @@ function PodiumCard({ rank, entry, isYou }) {
         <p className="font-black text-sm truncate" style={{ color: 'var(--text)' }}>
           {entry.display_name}{isYou ? ' (you)' : ''}
         </p>
-        <p className="font-black text-xl mt-1" style={{ color }}>{entry.sessions}</p>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>sessions</p>
+        <p className="font-black text-xl mt-1" style={{ color }}>{entry.drinks}</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>drinks</p>
       </div>
     </div>
   )
 }
 
-function RankRow({ rank, entry, isYou, userId }) {
+function RankRow({ rank, entry, isYou }) {
   return (
     <div
       className="flex items-center gap-4 px-4 py-3.5 rounded-2xl border"
@@ -55,14 +70,14 @@ function RankRow({ rank, entry, isYou, userId }) {
           {entry.display_name}{isYou ? ' · You' : ''}
         </p>
       </div>
-      <div className="text-right shrink-0">
+      <div className="text-right shrink-0 flex items-center gap-1">
+        <Wine size={13} style={{ color: isYou ? '#f5c842' : 'var(--text-muted)' }} />
         <span
           className="font-black text-base"
           style={{ color: isYou ? '#f5c842' : 'var(--text)' }}
         >
-          {entry.sessions}
+          {entry.drinks}
         </span>
-        <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>sess</span>
       </div>
     </div>
   )
@@ -78,48 +93,78 @@ export default function Leaderboard() {
 
   useEffect(() => { loadLeaderboard(); loadGroups() }, [tab, selectedGroup, profile])
 
+  async function buildRankings(userIds) {
+    if (!userIds.length) return []
+    // Fetch all completed night-time sessions for these users
+    const { data: sessions } = await supabase
+      .from('drink_sessions')
+      .select('user_id, started_at, total_standard_drinks')
+      .in('user_id', userIds)
+      .eq('status', 'completed')
+
+    // Group sessions by user
+    const byUser = {}
+    for (const s of sessions || []) {
+      if (!byUser[s.user_id]) byUser[s.user_id] = []
+      byUser[s.user_id].push(s)
+    }
+    return byUser
+  }
+
   async function loadLeaderboard() {
     setLoading(true)
+
     if (tab === 'university' && profile?.university_name) {
-      const { data: profiles } = await supabase.from('profiles')
+      const { data: profiles } = await supabase
+        .from('profiles')
         .select('id, display_name, show_on_leaderboard')
-        .eq('university_name', profile.university_name).eq('show_on_leaderboard', true)
+        .eq('university_name', profile.university_name)
+        .eq('show_on_leaderboard', true)
+
       if (profiles) {
         const userIds = profiles.map((p) => p.id)
-        const { data: sessions } = await supabase.from('drink_sessions')
-          .select('user_id').in('user_id', userIds).eq('status', 'completed')
-        const sessionCounts = (sessions || []).reduce((acc, s) => {
-          acc[s.user_id] = (acc[s.user_id] || 0) + 1; return acc
-        }, {})
-        setEntries(profiles.map((p) => ({ ...p, sessions: sessionCounts[p.id] || 0 }))
-          .sort((a, b) => b.sessions - a.sessions))
+        const byUser = await buildRankings(userIds)
+
+        setEntries(
+          profiles
+            .map((p) => ({ ...p, drinks: parseFloat(bestNightDrinks(byUser[p.id] || []).toFixed(1)) }))
+            .sort((a, b) => b.drinks - a.drinks)
+        )
       }
+
     } else if (tab === 'group' && selectedGroup) {
-      const { data: members } = await supabase.from('friend_group_members')
+      const { data: members } = await supabase
+        .from('friend_group_members')
         .select('user_id, profiles:profiles!friend_group_members_user_id_fkey(id, display_name)')
         .eq('group_id', selectedGroup)
+
       if (members) {
         const userIds = members.map((m) => m.user_id)
-        const { data: sessions } = await supabase.from('drink_sessions')
-          .select('user_id').in('user_id', userIds).eq('status', 'completed')
-        const sessionCounts = (sessions || []).reduce((acc, s) => {
-          acc[s.user_id] = (acc[s.user_id] || 0) + 1; return acc
-        }, {})
-        setEntries(members.map((m) => ({
-          id: m.user_id,
-          display_name: m.profiles?.display_name || 'Unknown',
-          sessions: sessionCounts[m.user_id] || 0,
-        })).sort((a, b) => b.sessions - a.sessions))
+        const byUser = await buildRankings(userIds)
+
+        setEntries(
+          members
+            .map((m) => ({
+              id: m.user_id,
+              display_name: m.profiles?.display_name || 'Unknown',
+              drinks: parseFloat(bestNightDrinks(byUser[m.user_id] || []).toFixed(1)),
+            }))
+            .sort((a, b) => b.drinks - a.drinks)
+        )
       }
+
     } else {
       setEntries([])
     }
+
     setLoading(false)
   }
 
   async function loadGroups() {
-    const { data } = await supabase.from('friend_group_members')
-      .select('group_id, friend_groups!inner(id, name)').eq('user_id', user.id)
+    const { data } = await supabase
+      .from('friend_group_members')
+      .select('group_id, friend_groups!inner(id, name)')
+      .eq('user_id', user.id)
     setGroups(data?.map((d) => d.friend_groups) || [])
   }
 
@@ -138,7 +183,10 @@ export default function Leaderboard() {
           >
             <Trophy size={20} style={{ color: '#f5c842' }} />
           </div>
-          <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>Leaderboard</h1>
+          <div>
+            <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>Leaderboard</h1>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Best single night (8 PM – 6 AM)</p>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -206,14 +254,14 @@ export default function Leaderboard() {
               ? '🎓 Set your university in Profile to see rankings.'
               : tab === 'group' && !selectedGroup
               ? '👥 Select a group to see rankings.'
-              : '🏁 No entries yet — be the first!'}
+              : '🏁 No night sessions yet — be the first!'}
           </div>
         ) : (
           <>
             {/* Podium top 3 */}
             {top3.length > 0 && (
-              <div className="flex gap-2 mb-5">
-                {/* Reorder: 2nd, 1st, 3rd for visual podium effect */}
+              <div className="flex gap-2 mb-5 items-end">
+                {/* Reorder: 2nd, 1st, 3rd for visual podium */}
                 {[
                   top3[1] && { entry: top3[1], rank: 2 },
                   top3[0] && { entry: top3[0], rank: 1 },
@@ -246,7 +294,7 @@ export default function Leaderboard() {
         )}
 
         <p className="text-xs text-center mt-6 pb-2" style={{ color: 'var(--text-muted)' }}>
-          Ranked by completed sessions · Drink responsibly
+          🍺 Best single night · 8 PM–6 AM window · Drink responsibly
         </p>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import FriendCard from '../components/FriendCard'
-import { UserPlus, Users, Bell, Search } from 'lucide-react'
+import { UserPlus, Users, Bell, Search, Plus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Social() {
@@ -16,6 +16,10 @@ export default function Social() {
   const [searchResults, setSearchResults] = useState([])
   const [loading, setLoading] = useState(true)
   const [newGroupName, setNewGroupName] = useState('')
+  // Group management state
+  const [expandedGroup, setExpandedGroup] = useState(null)
+  const [groupMembers, setGroupMembers] = useState({}) // groupId → [{user_id, display_name}]
+  const [loadingMembers, setLoadingMembers] = useState({})
 
   useEffect(() => {
     loadData()
@@ -92,9 +96,76 @@ export default function Social() {
 
   async function createGroup() {
     if (!newGroupName.trim()) return
-    const { error } = await supabase.from('friend_groups').insert({ creator_id: user.id, name: newGroupName })
-    if (error) toast.error('Failed to create group')
-    else { toast.success('Group created!'); setNewGroupName(''); loadData() }
+    const { data, error } = await supabase.from('friend_groups')
+      .insert({ creator_id: user.id, name: newGroupName })
+      .select()
+      .single()
+    if (error) {
+      toast.error('Failed to create group')
+    } else {
+      toast.success('Group created!')
+      setNewGroupName('')
+      // Auto-add creator as a member
+      await supabase.from('friend_group_members').insert({ group_id: data.id, user_id: user.id })
+      loadData()
+    }
+  }
+
+  async function loadGroupMembers(groupId) {
+    if (groupMembers[groupId]) return // cached
+    setLoadingMembers((prev) => ({ ...prev, [groupId]: true }))
+    const { data } = await supabase
+      .from('friend_group_members')
+      .select('user_id, profiles:profiles!friend_group_members_user_id_fkey(id, display_name)')
+      .eq('group_id', groupId)
+    setGroupMembers((prev) => ({
+      ...prev,
+      [groupId]: (data || []).map((m) => ({ user_id: m.user_id, display_name: m.profiles?.display_name || 'Unknown' })),
+    }))
+    setLoadingMembers((prev) => ({ ...prev, [groupId]: false }))
+  }
+
+  async function toggleGroup(groupId) {
+    if (expandedGroup === groupId) {
+      setExpandedGroup(null)
+    } else {
+      setExpandedGroup(groupId)
+      await loadGroupMembers(groupId)
+    }
+  }
+
+  async function addMemberToGroup(groupId, friendId) {
+    // Check if already a member
+    const existing = (groupMembers[groupId] || []).find((m) => m.user_id === friendId)
+    if (existing) { toast.error('Already in this group'); return }
+    const { error } = await supabase.from('friend_group_members').insert({ group_id: groupId, user_id: friendId })
+    if (error) {
+      toast.error(error.message.includes('duplicate') ? 'Already in group' : 'Failed to add member')
+    } else {
+      toast.success('Member added!')
+      // Refresh members for this group
+      setGroupMembers((prev) => ({ ...prev, [groupId]: undefined }))
+      await loadGroupMembers(groupId)
+      // Refresh group list to update counts
+      const { data } = await supabase.from('friend_groups')
+        .select('*, friend_group_members(user_id)').eq('creator_id', user.id)
+      setGroups(data || [])
+    }
+  }
+
+  async function removeMemberFromGroup(groupId, memberId) {
+    if (memberId === user.id) { toast.error("Can't remove yourself (you own this group)"); return }
+    const { error } = await supabase.from('friend_group_members')
+      .delete().eq('group_id', groupId).eq('user_id', memberId)
+    if (error) {
+      toast.error('Failed to remove member')
+    } else {
+      setGroupMembers((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).filter((m) => m.user_id !== memberId),
+      }))
+      toast.success('Member removed')
+    }
   }
 
   const tabs = [
@@ -221,8 +292,10 @@ export default function Social() {
           {/* Groups Tab */}
           {tab === 'groups' && (
             <div>
-              <div className="flex gap-2 mb-4">
+              {/* Create group */}
+              <div className="flex gap-2 mb-5">
                 <input type="text" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && createGroup()}
                   placeholder="New group name..."
                   style={inputStyle}
                   onFocus={(e) => e.target.style.borderColor = '#f59e0b'}
@@ -232,19 +305,132 @@ export default function Social() {
                   Create
                 </button>
               </div>
-              <div className="space-y-2">
+
+              <div className="space-y-3">
                 {groups.length === 0 ? (
-                  <p className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>No groups yet</p>
+                  <p className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>No groups yet. Create one above!</p>
                 ) : (
-                  groups.map((group) => (
-                    <div key={group.id} className="p-3 rounded-xl border"
-                      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{group.name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {group.friend_group_members?.length || 0} members
-                      </p>
-                    </div>
-                  ))
+                  groups.map((group) => {
+                    const isExpanded = expandedGroup === group.id
+                    const members = groupMembers[group.id] || []
+                    const memberCount = group.friend_group_members?.length || 0
+
+                    return (
+                      <div
+                        key={group.id}
+                        className="rounded-2xl border overflow-hidden"
+                        style={{ backgroundColor: 'var(--bg-card)', borderColor: isExpanded ? 'rgba(245,200,66,0.35)' : 'var(--border)' }}
+                      >
+                        {/* Group header row */}
+                        <button
+                          onClick={() => toggleGroup(group.id)}
+                          className="w-full flex items-center justify-between p-4"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center"
+                              style={{ background: 'rgba(245,200,66,0.15)' }}
+                            >
+                              <Users size={16} style={{ color: '#f5c842' }} />
+                            </div>
+                            <div className="text-left">
+                              <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>{group.name}</p>
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{memberCount} member{memberCount !== 1 ? 's' : ''}</p>
+                            </div>
+                          </div>
+                          {isExpanded
+                            ? <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
+                            : <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />
+                          }
+                        </button>
+
+                        {/* Expanded: members + add friends */}
+                        {isExpanded && (
+                          <div className="border-t px-4 pb-4" style={{ borderColor: 'var(--border)' }}>
+
+                            {/* Current members */}
+                            <p className="text-xs font-semibold uppercase tracking-widest mt-3 mb-2" style={{ color: 'var(--text-muted)' }}>
+                              Members
+                            </p>
+                            {loadingMembers[group.id] ? (
+                              <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>Loading…</p>
+                            ) : members.length === 0 ? (
+                              <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No members yet</p>
+                            ) : (
+                              <div className="space-y-1.5 mb-3">
+                                {members.map((m) => (
+                                  <div
+                                    key={m.user_id}
+                                    className="flex items-center justify-between px-3 py-2 rounded-xl"
+                                    style={{ backgroundColor: 'var(--bg-input)' }}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black"
+                                        style={{ background: 'rgba(245,200,66,0.2)', color: '#f5c842' }}
+                                      >
+                                        {(m.display_name || '?')[0].toUpperCase()}
+                                      </div>
+                                      <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+                                        {m.display_name}{m.user_id === user.id ? ' (you)' : ''}
+                                      </span>
+                                    </div>
+                                    {m.user_id !== user.id && (
+                                      <button
+                                        onClick={() => removeMemberFromGroup(group.id, m.user_id)}
+                                        className="p-1 rounded-lg"
+                                        style={{ color: 'var(--text-muted)' }}
+                                        title="Remove"
+                                      >
+                                        <X size={13} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Add friends to group */}
+                            {friends.length > 0 && (
+                              <>
+                                <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
+                                  Add Friends
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {friends
+                                    .filter((f) => !(groupMembers[group.id] || []).some((m) => m.user_id === f.id))
+                                    .map((friend) => (
+                                      <button
+                                        key={friend.id}
+                                        onClick={() => addMemberToGroup(group.id, friend.id)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border"
+                                        style={{
+                                          backgroundColor: 'var(--bg-input)',
+                                          borderColor: 'var(--border)',
+                                          color: 'var(--text)',
+                                        }}
+                                      >
+                                        <Plus size={11} />
+                                        {friend.display_name}
+                                      </button>
+                                    ))}
+                                  {friends.every((f) => (groupMembers[group.id] || []).some((m) => m.user_id === f.id)) && (
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>All friends already in group</p>
+                                  )}
+                                </div>
+                              </>
+                            )}
+
+                            {friends.length === 0 && (
+                              <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                                Add friends first to invite them to groups.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
                 )}
               </div>
             </div>

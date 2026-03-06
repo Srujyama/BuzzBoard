@@ -1,12 +1,12 @@
-import { useRef } from 'react'
-import { useNavigate, Navigate } from 'react-router-dom'
+import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useDrinkSession } from '../hooks/useDrinkSession'
 import { DRINK_TYPES } from '../utils/bac'
 import BACMeter from '../components/BACMeter'
 import AlertBanner from '../components/AlertBanner'
 import toast from 'react-hot-toast'
-import { Wine, Beer, GlassWater } from 'lucide-react'
+import { Wine, Beer, GlassWater, Play, Clock, Shield } from 'lucide-react'
 
 const tips = [
   'Alternate alcoholic drinks with water.',
@@ -52,11 +52,13 @@ export default function DrinkTracker() {
     currentBAC,
     totalDrinks,
     loading,
+    startSession,
     logDrink,
     endSession,
   } = useDrinkSession()
   const navigate = useNavigate()
   const ending = useRef(false)
+  const [starting, setStarting] = useState(false)
 
   if (loading) {
     return (
@@ -66,7 +68,125 @@ export default function DrinkTracker() {
     )
   }
 
-  if (!activeSession && !ending.current) return <Navigate to="/dashboard" replace />
+  // ── No active session → show "Start Night" screen ─────────────────────────
+  if (!activeSession && !ending.current) {
+    const now = new Date()
+    const hour = now.getHours()
+    // Show a "night" hint if it's between 8PM (20) and 6AM (6)
+    const isNightTime = hour >= 20 || hour < 6
+    const limits = {
+      low: profile?.calculated_low_limit || '—',
+      med: profile?.calculated_med_limit || '—',
+      high: profile?.calculated_high_limit || '—',
+    }
+
+    async function handleStart() {
+      setStarting(true)
+      const { error } = await startSession()
+      setStarting(false)
+      if (error) toast.error('Could not start session')
+    }
+
+    return (
+      <div className="min-h-screen pb-28 flex flex-col" style={{ backgroundColor: 'var(--bg)' }}>
+        <div className="max-w-lg mx-auto px-4 pt-10 w-full flex-1 flex flex-col">
+
+          {/* Hero */}
+          <div className="text-center mb-8">
+            <div
+              className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-5"
+              style={{ background: 'linear-gradient(135deg, #f5c842, #f0a020)', boxShadow: '0 12px 40px rgba(245,200,66,0.4)' }}
+            >
+              <Wine size={36} color="#0a0c14" strokeWidth={2.5} />
+            </div>
+            <h1 className="text-3xl font-black mb-2" style={{ color: 'var(--text)' }}>
+              {isNightTime ? 'Ready for tonight?' : 'Start tracking'}
+            </h1>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              {isNightTime
+                ? 'Log every drink to track your BAC in real time.'
+                : 'Tap Start Night whenever you begin drinking.'}
+            </p>
+          </div>
+
+          {/* Your limits preview */}
+          <div
+            className="rounded-2xl border p-5 mb-5"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
+              Tonight's Limits
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'LOW', val: limits.low, color: '#10b981', desc: 'Feeling it' },
+                { label: 'MED', val: limits.med, color: '#f5c842', desc: 'Buzzed' },
+                { label: 'HIGH', val: limits.high, color: '#ef4444', desc: 'Legal limit' },
+              ].map(({ label, val, color, desc }) => (
+                <div key={label} className="text-center">
+                  <div
+                    className="w-full py-3 rounded-xl mb-1 font-black text-2xl"
+                    style={{ background: `${color}15`, color }}
+                  >
+                    {val}
+                  </div>
+                  <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{label}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+            {profile?.personal_drink_limit && (
+              <div
+                className="mt-4 pt-4 flex items-center justify-between"
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Personal goal</span>
+                <span className="text-sm font-black" style={{ color: '#f5c842' }}>
+                  {profile.personal_drink_limit} drinks
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Info pills */}
+          <div className="flex gap-2 mb-8">
+            {[
+              { icon: Clock, text: 'Live BAC tracking' },
+              { icon: Shield, text: 'Research-backed limits' },
+            ].map(({ icon: Icon, text }) => (
+              <div
+                key={text}
+                className="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium"
+                style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+              >
+                <Icon size={13} style={{ color: '#f5c842', flexShrink: 0 }} />
+                {text}
+              </div>
+            ))}
+          </div>
+
+          {/* Start button */}
+          <button
+            onClick={handleStart}
+            disabled={starting}
+            className="w-full py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-3 disabled:opacity-60"
+            style={{
+              background: 'linear-gradient(135deg, #f5c842 0%, #f0a020 100%)',
+              color: '#0a0c14',
+              boxShadow: '0 8px 32px rgba(245,200,66,0.45)',
+            }}
+          >
+            <Play size={20} fill="#0a0c14" />
+            {starting ? 'Starting…' : 'Start Night'}
+          </button>
+
+          <p className="text-xs text-center mt-4" style={{ color: 'var(--text-muted)' }}>
+            🛡️ Never drink and drive
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const limits = {
     low: profile?.calculated_low_limit || 0,
