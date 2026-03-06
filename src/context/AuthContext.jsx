@@ -70,16 +70,21 @@ export function AuthProvider({ children }) {
   }
 
   async function updateProfile(updates) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .upsert(
-        { id: user.id, ...updates, updated_at: new Date().toISOString() },
-        { onConflict: 'id' }
-      )
-      .select()
-      .single()
-    if (data) setProfile(data)
-    return { data, error }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert(
+          { id: user.id, ...updates, updated_at: new Date().toISOString() },
+          { onConflict: 'id' }
+        )
+        .select()
+        .single()
+      if (data) setProfile(data)
+      return { data, error }
+    } catch (err) {
+      console.error('updateProfile error:', err)
+      return { data: null, error: err }
+    }
   }
 
   // needsOnboarding: user is authenticated but has no profile row OR hasn't completed onboarding

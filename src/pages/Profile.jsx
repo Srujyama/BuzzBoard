@@ -45,20 +45,28 @@ export default function Profile() {
     setSaving(true)
     const heightInches = parseInt(feet) * 12 + parseInt(inchesVal || 0)
     const weightLbs = parseInt(weight)
-    const limits = calculateLimits(weightLbs, gender)
-    const { error } = await updateProfile({
+
+    // Only recalculate limits if we have valid body stats
+    const hasValidStats = !isNaN(weightLbs) && weightLbs > 0 && gender
+    const limits = hasValidStats ? calculateLimits(weightLbs, gender) : null
+
+    const updates = {
       display_name: displayName,
-      biological_gender: gender,
-      height_inches: heightInches,
-      weight_lbs: weightLbs,
+      biological_gender: gender || null,
+      height_inches: isNaN(heightInches) ? null : heightInches,
+      weight_lbs: isNaN(weightLbs) ? null : weightLbs,
       university_name: university || null,
       personal_drink_limit: personalLimit ? parseInt(personalLimit) : null,
-      calculated_low_limit: limits.low,
-      calculated_med_limit: limits.med,
-      calculated_high_limit: limits.high,
-    })
+      ...(limits && {
+        calculated_low_limit: limits.low,
+        calculated_med_limit: limits.med,
+        calculated_high_limit: limits.high,
+      }),
+    }
+
+    const { error } = await updateProfile(updates)
     setSaving(false)
-    if (error) toast.error('Failed to save')
+    if (error) toast.error('Failed to save: ' + (error.message || 'Unknown error'))
     else toast.success('Profile updated!')
   }
 
