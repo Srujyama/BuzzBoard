@@ -35,6 +35,14 @@ const drinkStyles = {
     logColor: '#f97316',
     borderColor: 'rgba(249,115,22,0.4)',
   },
+  wine: {
+    gradient: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+    glow: 'rgba(168,85,247,0.35)',
+    icon: Wine,
+    textColor: '#ffffff',
+    logColor: '#a855f7',
+    borderColor: 'rgba(168,85,247,0.4)',
+  },
   mixed: {
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
     glow: 'rgba(59,130,246,0.35)',
@@ -52,6 +60,7 @@ export default function DrinkTracker() {
     drinkLogs,
     currentBAC,
     totalDrinks,
+    timeSinceLastDrink,
     loading,
     startSession,
     logDrink,
@@ -344,8 +353,38 @@ export default function DrinkTracker() {
           </div>
         )}
 
+        {/* Time Since Last Drink */}
+        {timeSinceLastDrink !== null && (
+          <div
+            className="rounded-2xl border p-3 mb-4 flex items-center gap-3"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+          >
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(245,200,66,0.12)' }}
+            >
+              <Clock size={16} style={{ color: '#f5c842' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Time since last drink
+              </p>
+              <p className="font-black text-lg leading-tight" style={{ color: 'var(--text)' }}>
+                {timeSinceLastDrink < 3600
+                  ? `${Math.floor(timeSinceLastDrink / 60)}m ${timeSinceLastDrink % 60}s`
+                  : `${Math.floor(timeSinceLastDrink / 3600)}h ${Math.floor((timeSinceLastDrink % 3600) / 60)}m`}
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {timeSinceLastDrink < 1800 ? '🟡 Recent' : timeSinceLastDrink < 3600 ? '🟢 Pacing well' : '✅ Long gap'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Drink Cards */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-2 gap-3 mb-5">
           {Object.entries(DRINK_TYPES).map(([type, info]) => {
             const style = drinkStyles[type] || drinkStyles.shot
             const Icon = style.icon
@@ -353,7 +392,7 @@ export default function DrinkTracker() {
               <button
                 key={type}
                 onClick={() => handleLogDrink(type)}
-                className="relative rounded-2xl p-4 text-center overflow-hidden"
+                className="relative rounded-2xl p-4 text-left overflow-hidden"
                 style={{
                   background: style.gradient,
                   boxShadow: `0 6px 20px ${style.glow}`,
@@ -362,21 +401,21 @@ export default function DrinkTracker() {
               >
                 {/* Decorative bg circle */}
                 <div
-                  className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full"
+                  className="absolute -right-4 -bottom-4 w-20 h-20 rounded-full"
                   style={{ background: 'rgba(255,255,255,0.1)' }}
                 />
-                <div className="relative z-10 flex flex-col items-center gap-2">
+                <div className="relative z-10 flex flex-col gap-2">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center"
                     style={{ background: 'rgba(255,255,255,0.2)' }}
                   >
                     <Icon size={20} color={style.textColor} />
                   </div>
-                  <p className="font-black text-sm" style={{ color: style.textColor }}>
-                    {info.label.split(' ')[0]}
+                  <p className="font-black text-base" style={{ color: style.textColor }}>
+                    {info.label}
                   </p>
-                  <p className="text-xs font-medium" style={{ color: style.textColor, opacity: 0.75 }}>
-                    {info.standardDrinks} std
+                  <p className="text-xs font-semibold leading-snug" style={{ color: style.textColor, opacity: 0.8 }}>
+                    {info.abvLabel}
                   </p>
                 </div>
               </button>
