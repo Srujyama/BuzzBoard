@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "buzzboard-dev",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["/Users/srujanyamali/WebstormProjects/buzzboard/.claude/start-dev.sh"],
+      "port": 5173
+    }
+  ]
+}
